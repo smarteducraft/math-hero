@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>매쓰 히어로</title>
+  <meta name="theme-color" content="#2b7cff">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    *{box-sizing:border-box}
+    html,body{margin:0;width:100%;height:100%;font-family:Pretendard,"Noto Sans KR",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#071f49;color:#fff}
+    button{font:inherit}
+    .hidden{display:none!important}
+    #intro,#portal{position:fixed;inset:0}
+    #intro{overflow:hidden;cursor:pointer;background:#56a6f4}
+    #intro img{width:100%;height:100%;object-fit:cover;display:block;user-select:none;-webkit-user-drag:none}
+    .shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 50%,rgba(3,22,56,.34) 100%);pointer-events:none}
+    .enter-wrap{position:absolute;left:0;right:0;bottom:max(28px,env(safe-area-inset-bottom));display:flex;justify-content:center;padding:0 18px;pointer-events:none}
+    .enter-btn{
+      pointer-events:auto;border:0;border-radius:999px;padding:15px 28px;font-weight:900;font-size:18px;color:#17437c;background:rgba(255,255,255,.94);
+      box-shadow:0 15px 40px rgba(0,39,98,.24);backdrop-filter:blur(12px);cursor:pointer;transition:.2s
+    }
+    .enter-btn:hover{transform:translateY(-2px) scale(1.015)}
+    .enter-hint{position:absolute;right:18px;top:18px;background:rgba(6,32,73,.5);padding:8px 12px;border-radius:999px;font-size:12px;backdrop-filter:blur(8px)}
+    #portal{background:#f6f8fc}
+    #appFrame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#f6f8fc}
+    .gate{
+      position:absolute;inset:0;z-index:4;display:grid;place-items:center;padding:24px;
+      background:
+        radial-gradient(circle at 20% 10%,rgba(90,168,255,.45),transparent 34%),
+        radial-gradient(circle at 85% 85%,rgba(125,93,255,.32),transparent 34%),
+        linear-gradient(145deg,#0c3c80,#175fb4 48%,#342e8e)
+    }
+    .gate-card{
+      width:min(480px,100%);background:rgba(255,255,255,.96);color:#172033;border-radius:26px;padding:30px;text-align:center;
+      box-shadow:0 22px 65px rgba(0,21,64,.32)
+    }
+    .logo{width:64px;height:64px;margin:0 auto 15px;border-radius:20px;display:grid;place-items:center;background:linear-gradient(135deg,#ffad22,#1d8cff);color:white;font-size:30px;font-weight:1000}
+    h1{margin:0 0 8px;font-size:31px;letter-spacing:-.04em}
+    .sub{margin:0 auto 18px;color:#667085;line-height:1.65}
+    #googleButton{min-height:44px;display:flex;justify-content:center}
+    #gateMessage{font-size:14px;color:#667085;margin-top:13px;line-height:1.55}
+    #gateError{margin-top:13px;padding:12px 14px;border-radius:13px;background:#fef2f2;color:#991b1b;font-size:13px;text-align:left;word-break:break-word}
+    .loader{width:38px;height:38px;margin:5px auto 15px;border:4px solid #e6ebf2;border-top-color:#3b82f6;border-radius:50%;animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .small{font-size:12px;color:#98a2b3;margin-top:15px}
+    @media(max-width:720px){
+      #intro img{object-position:center center}
+      .enter-btn{font-size:16px;padding:13px 23px}
+      .gate-card{padding:25px 20px;border-radius:22px}
+      h1{font-size:27px}
+    }
+  </style>
+</head>
+<body>
+
+<section id="intro" aria-label="매쓰 히어로 인트로" onclick="enterMathHero()">
+  <img src="./intro.png" alt="매쓰 히어로">
+  <div class="shade"></div>
+  <div class="enter-hint">이미지를 클릭해도 시작할 수 있어요</div>
+  <div class="enter-wrap">
+    <button class="enter-btn" type="button" onclick="event.stopPropagation();enterMathHero()">매쓰 히어로 시작하기 →</button>
+  </div>
+</section>
+
+<section id="portal" class="hidden">
+  <iframe id="appFrame" title="매쓰 히어로 학습 시스템" allow="clipboard-read; clipboard-write"></iframe>
+
+  <div id="gate" class="gate">
+    <div class="gate-card">
+      <div class="logo">M</div>
+      <h1 id="gateTitle">매쓰 히어로</h1>
+      <p class="sub" id="gateSubtitle">나의 수학 성장 여정을 시작합니다.</p>
+
+      <div id="loadingBox">
+        <div class="loader"></div>
+        <div id="loadingText">시스템에 연결하고 있습니다.</div>
+      </div>
+
+      <div id="loginBox" class="hidden">
+        <div id="googleButton"></div>
+        <div id="gateMessage">학교에서 사용하는 Google 계정으로 로그인하세요.</div>
+      </div>
+
+      <div id="gateError" class="hidden"></div>
+      <div class="small">학생의 학급 순위는 공개하지 않으며 개인의 성장 기록을 중심으로 제공합니다.</div>
+    </div>
+  </div>
+</section>
+
+<script>
+  /**
+   * ================================================================
+   * 반드시 수정해야 하는 2개의 값
+   * ================================================================
+   *
+   * 1. GOOGLE_CLIENT_ID
+   *    Google Cloud > Google Auth Platform > Clients에서 만든
+   *    "Web application" Client ID
+   *
+   * 2. APPS_SCRIPT_URL
+   *    Apps Script 웹 앱 배포 주소. 반드시 /exec 로 끝나는 주소
+   */
+  const CONFIG = {
+    GOOGLE_CLIENT_ID: 'PASTE_YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
+    APPS_SCRIPT_URL: 'PASTE_YOUR_APPS_SCRIPT_EXEC_URL'
+  };
+
+  const SESSION_KEY = 'MATH_HERO_SESSION_V2';
+  const state = {
+    entered: false,
+    frameReady: false,
+    googleRendered: false,
+    pageMode: new URLSearchParams(location.search).get('page') === 'admin' ? 'admin' : 'student'
+  };
+
+  const intro = document.getElementById('intro');
+  const portal = document.getElementById('portal');
+  const gate = document.getElementById('gate');
+  const frame = document.getElementById('appFrame');
+  const loginBox = document.getElementById('loginBox');
+  const loadingBox = document.getElementById('loadingBox');
+  const gateError = document.getElementById('gateError');
+
+  function enterMathHero() {
+    if (state.entered) return;
+    state.entered = true;
+
+    const configError = validateConfig();
+    if (configError) {
+      intro.classList.add('hidden');
+      portal.classList.remove('hidden');
+      showGateError(configError);
+      return;
+    }
+
+    intro.style.transition = 'opacity .25s ease';
+    intro.style.opacity = '0';
+    setTimeout(() => {
+      intro.classList.add('hidden');
+      portal.classList.remove('hidden');
+      loadAppFrame(state.pageMode);
+    }, 240);
+  }
+
+  function validateConfig() {
+    if (!CONFIG.GOOGLE_CLIENT_ID ||
+        CONFIG.GOOGLE_CLIENT_ID.includes('PASTE_YOUR_') ||
+        !CONFIG.GOOGLE_CLIENT_ID.endsWith('.apps.googleusercontent.com')) {
+      return 'GitHub index.html의 CONFIG.GOOGLE_CLIENT_ID에 Web application Client ID를 입력하세요.';
+    }
+    if (!CONFIG.APPS_SCRIPT_URL ||
+        CONFIG.APPS_SCRIPT_URL.includes('PASTE_YOUR_') ||
+        !/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(CONFIG.APPS_SCRIPT_URL)) {
+      return 'GitHub index.html의 CONFIG.APPS_SCRIPT_URL에 Apps Script /exec 배포 주소를 입력하세요.';
+    }
+    return '';
+  }
+
+  function buildAppsScriptUrl(mode) {
+    const url = new URL(CONFIG.APPS_SCRIPT_URL);
+    url.searchParams.set('embed', '1');
+    if (mode === 'admin') url.searchParams.set('page', 'admin');
+    else url.searchParams.delete('page');
+    return url.toString();
+  }
+
+  function loadAppFrame(mode) {
+    state.frameReady = false;
+    state.pageMode = mode === 'admin' ? 'admin' : 'student';
+    showLoading(state.pageMode === 'admin' ? '교사 관리 페이지에 연결하고 있습니다.' : '시스템에 연결하고 있습니다.');
+    frame.style.visibility = 'hidden';
+    frame.src = buildAppsScriptUrl(state.pageMode);
+  }
+
+  window.addEventListener('message', event => {
+    if (event.source !== frame.contentWindow) return;
+    const data = event.data || {};
+    if (data.channel !== 'MATH_HERO') return;
+
+    switch (data.type) {
+      case 'MATH_HERO_READY':
+        state.frameReady = true;
+        restoreOrLogin();
+        break;
+
+      case 'MATH_HERO_SESSION_CREATED':
+        if (data.sessionToken) {
+          localStorage.setItem(SESSION_KEY, data.sessionToken);
+        }
+        break;
+
+      case 'MATH_HERO_AUTH_OK':
+        revealApp();
+        break;
+
+      case 'MATH_HERO_SESSION_EXPIRED':
+        localStorage.removeItem(SESSION_KEY);
+        showGoogleLogin(data.message || '');
+        break;
+
+      case 'MATH_HERO_AUTH_ERROR':
+        localStorage.removeItem(SESSION_KEY);
+        showGoogleLogin(data.message || 'Google 로그인 처리 중 오류가 발생했습니다.');
+        break;
+
+      case 'MATH_HERO_LOGOUT':
+        localStorage.removeItem(SESSION_KEY);
+        frame.style.visibility = 'hidden';
+        showGoogleLogin('');
+        break;
+
+      case 'MATH_HERO_ROUTE_ADMIN':
+        routeTo('admin');
+        break;
+
+      case 'MATH_HERO_ROUTE_STUDENT':
+        routeTo('student');
+        break;
+
+      case 'MATH_HERO_CONFIG_ERROR':
+        showGateError(data.message || 'Apps Script 설정을 확인하세요.');
+        break;
+    }
+  });
+
+  function restoreOrLogin() {
+    const sessionToken = localStorage.getItem(SESSION_KEY) || '';
+    if (sessionToken) {
+      showLoading('기존 로그인 상태를 확인하고 있습니다.');
+      sendToFrame('MATH_HERO_RESTORE_SESSION', { sessionToken });
+    } else {
+      showGoogleLogin('');
+    }
+  }
+
+  function sendToFrame(type, payload) {
+    if (!frame.contentWindow) return;
+    frame.contentWindow.postMessage(Object.assign({
+      channel: 'MATH_HERO',
+      type
+    }, payload || {}), '*');
+  }
+
+  function showGoogleLogin(errorMessage) {
+    gate.classList.remove('hidden');
+    loadingBox.classList.add('hidden');
+    loginBox.classList.remove('hidden');
+
+    if (state.pageMode === 'admin') {
+      document.getElementById('gateTitle').textContent = '교사 관리 로그인';
+      document.getElementById('gateSubtitle').textContent = '관리자로 등록된 Google 계정으로 로그인하세요.';
+    } else {
+      document.getElementById('gateTitle').textContent = '매쓰 히어로';
+      document.getElementById('gateSubtitle').textContent = '나의 수학 성장 여정을 시작합니다.';
+    }
+
+    if (errorMessage) showGateError(errorMessage);
+    else hideGateError();
+
+    renderGoogleButton();
+  }
+
+  function renderGoogleButton() {
+    if (state.googleRendered) return;
+
+    const tryRender = () => {
+      if (!(window.google && google.accounts && google.accounts.id)) {
+        setTimeout(tryRender, 120);
+        return;
+      }
+
+      google.accounts.id.initialize({
+        client_id: CONFIG.GOOGLE_CLIENT_ID,
+        callback: onGoogleCredential,
+        auto_select: false,
+        cancel_on_tap_outside: true
+      });
+
+      google.accounts.id.renderButton(
+        document.getElementById('googleButton'),
+        {
+          theme: 'outline',
+          size: 'large',
+          shape: 'pill',
+          text: 'signin_with',
+          width: 290
+        }
+      );
+
+      state.googleRendered = true;
+    };
+
+    tryRender();
+  }
+
+  function onGoogleCredential(response) {
+    if (!response || !response.credential) {
+      showGateError('Google 로그인 정보를 받지 못했습니다.');
+      return;
+    }
+
+    showLoading('Google 계정을 확인하고 있습니다.');
+    sendToFrame('MATH_HERO_GOOGLE_LOGIN', {
+      credential: response.credential
+    });
+  }
+
+  function revealApp() {
+    hideGateError();
+    frame.style.visibility = 'visible';
+    gate.classList.add('hidden');
+  }
+
+  function showLoading(message) {
+    gate.classList.remove('hidden');
+    loginBox.classList.add('hidden');
+    loadingBox.classList.remove('hidden');
+    document.getElementById('loadingText').textContent = message || '처리 중입니다.';
+    hideGateError();
+  }
+
+  function showGateError(message) {
+    gate.classList.remove('hidden');
+    gateError.textContent = message || '';
+    gateError.classList.remove('hidden');
+  }
+
+  function hideGateError() {
+    gateError.textContent = '';
+    gateError.classList.add('hidden');
+  }
+
+  function routeTo(mode) {
+    const next = mode === 'admin' ? 'admin' : 'student';
+
+    const url = new URL(location.href);
+    if (next === 'admin') url.searchParams.set('page', 'admin');
+    else url.searchParams.delete('page');
+    history.replaceState({}, '', url);
+
+    loadAppFrame(next);
+  }
+</script>
+</body>
+</html>
