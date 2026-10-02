@@ -111,6 +111,8 @@
     entered: false,
     frameReady: false,
     googleRendered: false,
+    bridgeWindow: null,
+    bridgeOrigin: '',
     pageMode: new URLSearchParams(location.search).get('page') === 'admin' ? 'admin' : 'student'
   };
 
@@ -167,16 +169,42 @@
 
   function loadAppFrame(mode) {
     state.frameReady = false;
+    state.bridgeWindow = null;
+    state.bridgeOrigin = '';
     state.pageMode = mode === 'admin' ? 'admin' : 'student';
     showLoading(state.pageMode === 'admin' ? '교사 관리 페이지에 연결하고 있습니다.' : '시스템에 연결하고 있습니다.');
     frame.style.visibility = 'hidden';
     frame.src = buildAppsScriptUrl(state.pageMode);
   }
 
+  function isGoogleAppsScriptMessageOrigin(origin) {
+    try {
+      const u = new URL(origin);
+      return u.protocol === 'https:' && (
+        u.hostname === 'script.google.com' ||
+        u.hostname === 'script.googleusercontent.com' ||
+        u.hostname.endsWith('.googleusercontent.com')
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
   window.addEventListener('message', event => {
-    if (event.source !== frame.contentWindow) return;
     const data = event.data || {};
     if (data.channel !== 'MATH_HERO') return;
+
+    // Apps Script HTML Service adds its own sandbox iframe. Therefore the
+    // message can come from a descendant frame rather than appFrame.contentWindow.
+    // On the first READY message, pin the exact source Window for this session.
+    if (!state.bridgeWindow) {
+      if (data.type !== 'MATH_HERO_READY' && data.type !== 'MATH_HERO_CONFIG_ERROR') return;
+      if (!isGoogleAppsScriptMessageOrigin(event.origin)) return;
+      state.bridgeWindow = event.source;
+      state.bridgeOrigin = event.origin;
+    } else if (event.source !== state.bridgeWindow) {
+      return;
+    }
 
     switch (data.type) {
       case 'MATH_HERO_READY':
@@ -235,8 +263,9 @@
   }
 
   function sendToFrame(type, payload) {
-    if (!frame.contentWindow) return;
-    frame.contentWindow.postMessage(Object.assign({
+    const target = state.bridgeWindow || frame.contentWindow;
+    if (!target) return;
+    target.postMessage(Object.assign({
       channel: 'MATH_HERO',
       type
     }, payload || {}), '*');
